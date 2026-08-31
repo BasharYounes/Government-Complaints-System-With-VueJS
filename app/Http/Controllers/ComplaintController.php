@@ -1,0 +1,212 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Aspects\TransactionAspect;
+use App\Http\Requests\Attachments\AttachmentRequest;
+use App\Http\Requests\Complaints\ComplaintUpdateRequest;
+use App\Repositories\Attachments\AttachmentRepository;
+use App\Repositories\Complaints\ComplaintRepository;
+use App\Repositories\GovernementEntities\GovernmentEntityRepository;
+use App\Repositories\ReferanceNumberRepository\ReferanceNumberRepository;
+use App\Services\Attachments\AttachmentService;
+use App\Services\EmployeeComplaintService;
+use App\Http\Requests\Complaints\ComplaintRequest;
+use Cache;
+use Illuminate\Support\Str;
+use Inertia\Inertia;
+
+class ComplaintController extends Controller
+{
+    // Using the ApiResponse trait for standardized API responses
+    /**
+     * Constructor to initialize repositories and services.
+     */
+    public function __construct(protected AttachmentService $attachmentService,
+    protected AttachmentRepository $attachmentRepository,
+    protected ReferanceNumberRepository $referenceNumberRepository,
+    protected GovernmentEntityRepository $governmentEntityRepository,
+    protected ComplaintRepository $complaintRepository,
+    protected EmployeeComplaintService $complaintService
+    )
+    {}
+    /**
+     * Display a listing of the resource.
+     */
+
+    public function home()
+    {
+        return Inertia::render('User/HomePage', $this->getHomePayload());
+    }
+
+    private function getHomePayload(): array
+    {
+        $user = auth()->user();
+
+        $complaints = $user->complaints()
+            ->with('governmentEntity:id,name')
+            ->latest()
+            ->get();
+
+        $stats = $this->buildHomeStats($complaints);
+
+        $recentComplaints = $complaints
+            ->take(5)
+            ->map(fn ($complaint) => [
+                'id' => $complaint->id,
+                'tracking_number' => $complaint->reference_number,
+                'subject' => $complaint->type,
+                'department' => $complaint->governmentEntity?->name ?? 'غير محدد',
+                'status' => $this->mapComplaintStatusForHome($complaint->status),
+                'created_at' => $complaint->created_at?->format('Y-m-d'),
+            ])
+            ->values();
+
+        $notifications = $user->notifications()
+            ->latest()
+            ->limit(10)
+            ->get(['id', 'title', 'body', 'is_read', 'created_at'])
+            ->map(fn ($notification) => [
+                'id' => $notification->id,
+                'message' => $notification->title ?: Str::limit($notification->body, 80),
+                'time' => $notification->created_at?->diffForHumans(),
+                'read' => (bool) $notification->is_read,
+            ])
+            ->values();
+
+        return [
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+            ],
+            'stats' => $stats,
+            'recentComplaints' => $recentComplaints,
+            'notifications' => $notifications,
+        ];
+    }
+
+    private function buildHomeStats($complaints): array
+    {
+        return [
+            'total' => $complaints->count(),
+            'pending' => $complaints->whereIn('status', ['new', 'in_progress'])->count(),
+            'resolved' => $complaints->where('status', 'completed')->count(),
+            'rejected' => $complaints->where('status', 'rejected')->count(),
+        ];
+    }
+
+    private function mapComplaintStatusForHome(string $status): string
+    {
+        return match ($status) {
+            'new' => 'pending',
+            'in_progress' => 'processing',
+            'completed' => 'resolved',
+            default => $status,
+        };
+    }
+    /**
+     * Show the form for creating a new resource.
+     */
+    public function create(ComplaintRequest $complaintRequest,AttachmentRequest $attachmentRequest)
+    {
+        $governmentEntity = $this->governmentEntityRepository->getCodeById($complaintRequest->government_entity_id);
+
+        $referenceNumber = TransactionAspect::handle(
+            $this->referenceNumberRepository,
+            'generateReferenceNumber',
+            [$governmentEntity->code]
+        );
+
+        $complaint = $this->complaintRepository->createComplaint($complaintRequest->validated(), $referenceNumber);
+
+        if ($attachmentRequest->hasFile('file')) {
+            $file = $attachmentRequest->file('file');
+            $data = $this->attachmentService->extractInfoFromFile($attachmentRequest['file']);
+            $path = $file->store('attachments','public');
+            dispatch(new \App\Jobs\ProcessComplaintAttachmentJob(
+                $complaint->id,
+                $path,
+                auth()->user()->id,
+                $data,
+
+            ));
+        }
+
+    return redirect()
+        ->route('user.home')
+        ->with('success', 'Complaint created successfully');
+    }
+
+    /**
+     * Display the specified resource.
+     */
+    public function show($id)
+    {
+        $complaint = $this->complaintRepository->getComplaintById($id);
+    return $this->success('Complaint retrieved successfully', $complaint, 200);
+    }
+    /**
+     * Check if the complaint is being edited by another employee.
+     */
+    public function edit($id)
+    {
+
+        $User = auth()->user();
+        $lockKey = 'complaint_update_'.$id;
+
+
+        $lockOwner = Cache::get($lockKey);
+
+        if ($lockOwner && $lockOwner !== $User->id) {
+            return $this->error('This complaint is currently being edited by another employee.',null, 403);
+        }
+
+        Cache::put($lockKey, $User->id, now()->addMinutes(10));
+
+        $complaint = $this->complaintRepository->getComplaintById($id);
+
+    return $this->success('Complaint allowed editing', $lockKey, 200);
+    }
+    /**
+     * Update the specified resource in storage after checking for edit locks.
+     */
+    public function update(ComplaintUpdateRequest $request,$id)
+    {
+        $updatedComplaint = $this->complaintRepository->updateComplaint($id,$request->validated());
+
+    return $this->success('Complaint updated successfully', $updatedComplaint, 200);
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy($id)
+    {
+        $this->complaintRepository->deleteComplaint($id);
+    return $this->success('Complaint deleted successfully', null, 200);
+    }
+
+    public function addAttachment(AttachmentRequest $attachmentRequest,$id)
+    {
+        $file = $attachmentRequest->file('file');
+        $data = $this->attachmentService->extractInfoFromFile($attachmentRequest['file']);
+        $path = $file->store('attachments','public');
+        dispatch(new \App\Jobs\ProcessComplaintAttachmentJob(
+            $id,
+            $path,
+            auth()->user()->id,
+            $data,
+
+        ));
+
+    return $this->success('Attachments uploaded successfully', null, 201);
+    }
+
+    public function getComplaintsforUser()
+    {
+        $complaints = $this->complaintRepository->getComplaintsByUser();
+    return $this->success('User complaints retrieved successfully', $complaints, 200);
+    }
+
+}
