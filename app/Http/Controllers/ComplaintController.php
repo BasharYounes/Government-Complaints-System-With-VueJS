@@ -12,9 +12,13 @@ use App\Repositories\ReferanceNumberRepository\ReferanceNumberRepository;
 use App\Services\Attachments\AttachmentService;
 use App\Services\EmployeeComplaintService;
 use App\Http\Requests\Complaints\ComplaintRequest;
+use App\Http\Requests\Complaints\TrackComplaintRequest;
+use Illuminate\Http\RedirectResponse;
 use Cache;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Storage;
+use App\Http\Resources\NotificationResource;
 
 class ComplaintController extends Controller
 {
@@ -62,17 +66,11 @@ class ComplaintController extends Controller
             ])
             ->values();
 
-        $notifications = $user->notifications()
+        $notifications = $user
+            ->notifications()
             ->latest()
-            ->limit(10)
-            ->get(['id', 'title', 'body', 'is_read', 'created_at'])
-            ->map(fn ($notification) => [
-                'id' => $notification->id,
-                'message' => $notification->title ?: Str::limit($notification->body, 80),
-                'time' => $notification->created_at?->diffForHumans(),
-                'read' => (bool) $notification->is_read,
-            ])
-            ->values();
+            ->limit(20)
+            ->get();
 
         return [
             'user' => [
@@ -82,7 +80,10 @@ class ComplaintController extends Controller
             ],
             'stats' => $stats,
             'recentComplaints' => $recentComplaints,
-            'notifications' => $notifications,
+            'notifications' =>
+                NotificationResource::collection(
+                    $notifications
+                )->resolve(),
         ];
     }
 
@@ -141,10 +142,52 @@ class ComplaintController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show($id)
+   public function show($id)
     {
         $complaint = $this->complaintRepository->getComplaintById($id);
-    return $this->success('Complaint retrieved successfully', $complaint, 200);
+
+        if ((int) $complaint->user_id !== (int) auth()->id()) {
+            return redirect()
+                ->route('user.complaints')
+                ->with('error', 'الشكوى غير موجودة أو لا تملك صلاحية الوصول إليها.');
+        }
+
+        return Inertia::render('User/Complaint/ComplaintDetails', [
+            'complaint' => [
+                'id' => $complaint->id,
+                'reference_number' => $complaint->reference_number,
+                'type' => $complaint->type,
+                'description' => $complaint->description,
+                'status' => $complaint->status,
+                'location' => $complaint->location,
+
+                'government_entity' => $complaint->governmentEntity
+                    ? [
+                        'id' => $complaint->governmentEntity->id,
+                        'name' => $complaint->governmentEntity->name,
+                    ]
+                    : null,
+
+                'attachments' => $complaint->attachments
+                    ->map(function ($attachment) {
+                        return [
+                            'id' => $attachment->id,
+                            'file_name' => $attachment->file_name,
+                            'file_path' => $attachment->file_path,
+                            'mime_type' => $attachment->mime_type,
+                            'file_size' => $attachment->file_size,
+
+                            'url' => Storage::disk('public')->url(
+                                $attachment->file_path
+                            ),
+                        ];
+                    })
+                    ->values(),
+
+                'created_at' => $complaint->created_at?->format('Y-m-d H:i'),
+                'updated_at' => $complaint->updated_at?->format('Y-m-d H:i'),
+            ],
+        ]);
     }
     /**
      * Check if the complaint is being edited by another employee.
@@ -171,11 +214,27 @@ class ComplaintController extends Controller
     /**
      * Update the specified resource in storage after checking for edit locks.
      */
-    public function update(ComplaintUpdateRequest $request,$id)
-    {
-        $updatedComplaint = $this->complaintRepository->updateComplaint($id,$request->validated());
+    public function update(
+        ComplaintUpdateRequest $request,
+        int $id
+    ) {
+        $complaint =
+            $this->complaintRepository
+                ->updateUserComplaint(
+                    $id,
+                    auth()->id(),
+                    $request->validated()
+                );
 
-    return $this->success('Complaint updated successfully', $updatedComplaint, 200);
+        return redirect()
+            ->route(
+                'user.complaints.show',
+                ['id' => $complaint->id]
+            )
+            ->with(
+                'success',
+                'تم تحديث الشكوى بنجاح.'
+            );
     }
 
     /**
@@ -206,7 +265,32 @@ class ComplaintController extends Controller
     public function getComplaintsforUser()
     {
         $complaints = $this->complaintRepository->getComplaintsByUser();
-    return $this->success('User complaints retrieved successfully', $complaints, 200);
+
+        return Inertia::render('User/Complaint/MyComplaints', [
+            'complaints' => $complaints,
+        ]);
+    }
+
+    public function track(
+        TrackComplaintRequest $request
+    ): RedirectResponse {
+        $complaint = $this->complaintRepository
+            ->findByReferenceNumberForUser(
+                $request->validated('reference_number'),
+                auth()->id()
+            );
+
+        if (! $complaint) {
+            return back()->withErrors([
+                'reference_number' =>
+                    'لم يتم العثور على شكوى بهذا الرقم.',
+            ]);
+        }
+
+        return redirect()->route(
+            'user.complaints.show',
+            $complaint->id
+        );
     }
 
 }

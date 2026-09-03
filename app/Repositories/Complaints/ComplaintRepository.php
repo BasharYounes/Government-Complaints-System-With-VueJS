@@ -4,6 +4,7 @@ namespace App\Repositories\Complaints;
 
 use App\Models\Complaint;
 use App\Attributes\Transactional;
+use Illuminate\Validation\ValidationException;
 
 class ComplaintRepository
 {
@@ -41,6 +42,38 @@ class ComplaintRepository
         return $complaint->fresh();
     }
 
+    #[Transactional]
+    public function updateUserComplaint(
+        int $complaintId,
+        int $userId,
+        array $data
+    ): Complaint {
+
+        $complaint = Complaint::query()
+            ->whereKey($complaintId)
+            ->where('user_id', $userId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $complaint) {
+            abort(404);
+        }
+
+        if ($complaint->status !== 'new') {
+            throw ValidationException::withMessages([
+                'complaint' =>
+                    'لا يمكن تعديل الشكوى بعد بدء معالجتها.',
+            ]);
+        }
+
+        $complaint->update($data);
+
+        return $complaint->fresh([
+            'governmentEntity',
+            'attachments',
+        ]);
+    }
+
     public function deleteComplaint($id): void
     {
         $complaint = $this->getComplaintById($id);
@@ -49,7 +82,24 @@ class ComplaintRepository
 
     public function getComplaintsByUser()
     {
-        return auth()->user()->complaints()->with('attachments')->get();
+        return auth()->user()
+            ->complaints()
+            ->with([
+                'governmentEntity:id,name',
+                'attachments',
+            ])
+            ->latest()
+            ->get();
+    }
+
+    public function findByReferenceNumberForUser(
+        string $referenceNumber,
+        int $userId
+    ): ?Complaint {
+        return Complaint::query()
+            ->where('reference_number', $referenceNumber)
+            ->where('user_id', $userId)
+            ->first();
     }
 
     public function allComplaint()

@@ -19,7 +19,7 @@ use App\Http\Requests\UpdateUserInformationRequest;
 use App\Services\AuthService;
 use App\Services\GenerateCode;
 use App\Services\LoginAttemptService;
-// use App\Traits\ApiResponse;
+use App\Http\Requests\StoreFcmTokenRequest;
 use App\Http\Requests\AuthEmployee\SignInRequest as LoginEmployeeRequest;
 use App\Http\Requests\AuthEmployee\SignUpRequest as RegisterEmployeeRequest;
 use App\Http\Requests\AuthAdmin\SignUpRequest as RegisterAdminRequest;
@@ -152,9 +152,14 @@ class AuthController extends Controller
 
     public function EditInformation(UpdateUserInformationRequest $request)
     {
-        $user = $this->userRepository->update(auth()->user(), $request);
+        $this->userRepository->update(
+            auth()->user(),
+            $request
+        );
 
-        return $this->success('success', ['user'=> $user]);
+        return redirect()
+            ->route('user.profile')
+            ->with('success', 'تم تحديث معلومات الملف الشخصي بنجاح');
     }
 
     /**
@@ -310,13 +315,24 @@ class AuthController extends Controller
         $user = auth()->user();
         // dd($user);
         $this->userRepository->deleteUserToken($user);
-        return $this->success("تم تسجيل الخروج بنجاح");
+        return redirect()->route('user.log-in')
+            ->with('success', 'تم تسجيل الخروج بنجاح');
     }
 
     public function getUser()
     {
         $user = auth()->user();
-        return $this->success("success", $user);
+
+        return Inertia::render('User/Profile/Profile', [
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'image' => $user->image,
+                'email_verified' => ! is_null($user->email_verified_at),
+            ],
+        ]);
     }
 
     public function storeFCM_Token(Request $request)
@@ -328,5 +344,20 @@ class AuthController extends Controller
         $this->authService->storeFCM(auth()->user(),$request->input('fcm_token'));
 
         return $this->success("Token saved successfully");
+    }
+
+    public function storeFcmToken(
+    StoreFcmTokenRequest $request
+    ) {
+
+        $this->authService->storeFCM(
+            $request->user(),
+            $request->validated('fcm_token')
+        );
+
+
+        return $this->success(
+            'تم تسجيل جهاز الإشعارات بنجاح'
+        );
     }
 }

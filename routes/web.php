@@ -1,5 +1,25 @@
 <?php
 
+use Illuminate\Support\Facades\Route;
+
+Route::get('/firebase-messaging-sw.js', function () {
+
+    return response()
+        ->view('firebase-messaging-sw')
+        ->header(
+            'Content-Type',
+            'application/javascript'
+        )
+        ->header(
+            'Service-Worker-Allowed',
+            '/'
+        )
+        ->header(
+            'Cache-Control',
+            'no-cache, no-store, must-revalidate'
+        );
+
+});
 
 require __DIR__.'/User/VuePages.php';
 

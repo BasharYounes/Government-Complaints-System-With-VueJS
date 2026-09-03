@@ -4,9 +4,7 @@ namespace App\Observer;
 
 
 use App\Models\Complaint;
-use App\Models\User;
-use App\Traits\DetectsActor;
-use DB;
+
 
 class ComplaintObserver
 {
@@ -46,7 +44,7 @@ class ComplaintObserver
                 $complaint->user_id,
                 'complaint_status_changed',
                 [
-                    'reference_number' => $complaint->referance_number,
+                    'reference_number' => $complaint->reference_number,
                     'old_status' => $original['status'] ?? 'unknown',
                     'new_status' => $dirty['status'],
                 ]
@@ -57,13 +55,38 @@ class ComplaintObserver
     /**
      * Handle the Complaint "updated" event.
      */
-    public function updated(Complaint $complaint): void
-    {
-        dispatch(new \App\Jobs\SendComplaintNotificationJob(
+    public function updated(
+        Complaint $complaint
+    ): void {
+
+        if (! $complaint->wasChanged('status')) {
+            return;
+        }
+
+
+        \App\Jobs\SendNotificationJob::dispatch(
+
             $complaint->user_id,
-            'updateByUser',
-            []
-        ));
+
+            'complaint_status_changed',
+
+            [
+
+                'complaint_id' =>
+                    $complaint->id,
+
+                'reference_number' =>
+                    $complaint->reference_number,
+
+                'old_status' =>
+                    $complaint->getOriginal('status'),
+
+                'new_status' =>
+                    $complaint->status,
+
+            ]
+
+        )->afterCommit();
     }
 
     /**
@@ -140,7 +163,7 @@ class ComplaintObserver
         $statuses = [
             'new' => 'جديدة',
             'in_progress' => 'قيد المعالجة',
-            'resolved' => 'تم الحل',
+            'resolved' => 'مكتملة',
             'rejected' => 'مرفوضة'
         ];
 

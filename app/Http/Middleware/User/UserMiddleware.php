@@ -4,27 +4,21 @@ namespace App\Http\Middleware\User;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class UserMiddleware
 {
-    /**
-     * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     */
     public function handle(Request $request, Closure $next): Response
     {
-        auth()->shouldUse('api');
+        Auth::shouldUse('web');
 
-        // if (!auth()->guard('api')->check()) {
-        //     return response()->json([
-        //         'status' => false,
-        //         'message' => 'Unauthorized Access',
-        //     ], 401);
-        // }
+        if (!Auth::guard('web')->check()) {
+            return redirect()
+                ->route('user.log-in')
+                ->with('error', 'يرجى تسجيل الدخول أولاً');
+        }
 
         return $next($request);
-
     }
 }

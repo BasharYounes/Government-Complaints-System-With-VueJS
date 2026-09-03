@@ -2,44 +2,129 @@
 
 namespace App\Repositories;
 
-use App\Models\PasswordResetToken;
 use App\Models\User;
 use App\Traits\ApiResponse;
-use Exception;
 use Illuminate\Support\Facades\Storage;
 
-class UserRepository {
+
+class UserRepository
+{
     use ApiResponse;
 
 
-    public function findByEmail($email) {
-        return User::where('email', $email)->firstOrFail();
+    public function findByEmail($email)
+    {
+        return User::where('email', $email)
+            ->firstOrFail();
     }
 
-    public function update(User $user, $request) {
-        // Accept either an array of attributes or a Request/FormRequest instance
-        if (is_array($request)) {
-            $data = $request;
-        } else {
-            $data = $request->only(['name', 'email', 'phone', 'email_verified_at', 'password']);
 
-            if ($request->hasFile('image') && $request->file('image')->isValid()) {
-                $filename = time() . '.' . $request->file('image')->extension();
-                $path = Storage::disk('public')->putFileAs(
+    public function update(User $user, $request)
+    {
+        /*
+        |--------------------------------------------------------------------------
+        | Array Updates
+        |--------------------------------------------------------------------------
+        |
+        | مستخدمة من أماكن أخرى مثل تفعيل البريد وتغيير كلمة المرور.
+        |
+        */
+
+        if (is_array($request)) {
+
+            $user->update($request);
+
+            return $user->fresh();
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Profile Information
+        |--------------------------------------------------------------------------
+        */
+
+        $data = $request->only([
+            'name',
+            'email',
+            'phone',
+        ]);
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Email changed
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            isset($data['email']) &&
+            $data['email'] !== $user->email
+        ) {
+            $data['email_verified_at'] = null;
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Profile Image
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $request->hasFile('image') &&
+            $request->file('image')->isValid()
+        ) {
+
+            $oldImage = $user->getRawOriginal('image');
+
+
+            $filename =
+                uniqid('user_', true)
+                . '.'
+                . $request->file('image')->extension();
+
+
+            $path = Storage::disk('public')
+                ->putFileAs(
                     'users',
                     $request->file('image'),
                     $filename,
-                    ['visibility' => 'public']
+                    [
+                        'visibility' => 'public'
+                    ]
                 );
-                $data['image'] = $path;
+
+
+            $data['image'] = $path;
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Delete old image
+            |--------------------------------------------------------------------------
+            */
+
+            if (
+                $oldImage &&
+                Storage::disk('public')->exists($oldImage)
+            ) {
+                Storage::disk('public')->delete($oldImage);
             }
         }
 
+
+        /*
+        |--------------------------------------------------------------------------
+        | Update
+        |--------------------------------------------------------------------------
+        */
+
         $user->update($data);
+
 
         return $user->fresh();
     }
-
 
 
     public function deleteUserToken($user)
@@ -49,10 +134,17 @@ class UserRepository {
         }
     }
 
-     public function createToken($user)
+
+    public function createToken($user)
     {
-        return $user->createToken('user_token', ['user'])->plainTextToken;
+        return $user
+            ->createToken(
+                'user_token',
+                ['user']
+            )
+            ->plainTextToken;
     }
+
 
     public function findById($id)
     {

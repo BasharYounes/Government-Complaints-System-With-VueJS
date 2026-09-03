@@ -91,24 +91,49 @@ public function FilterComplaints()
         );
     }
 
-    public function RequestAdditionalInformation($id,Request $request)
-    {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'notes' => 'required',
+    public function requestAdditionalInformation(
+        $id,
+        Request $request
+    ) {
+        $validated = $request->validate([
+            'notes' => [
+                'required',
+                'string',
+                'max:2000',
+            ],
         ]);
 
-        $complaint = $this->complaintRepository->getComplaintById($id);
 
-        event(new GenericNotificationEvent(
-            User::findOrFail($request->user_id),
-            "RequestAdditionalInformation",
+        $complaint =
+            $this->complaintRepository
+                ->getComplaintById($id);
+
+
+        \App\Jobs\SendNotificationJob::dispatch(
+
+            $complaint->user_id,
+
+            'RequestAdditionalInformation',
+
             [
-                "reference_number" => $complaint->reference_number,
-                "notes" => $request->notes
-                ]
-        ));
-        return $this->success('تم ارسال الطلب بنجاح');
+
+                'complaint_id' =>
+                    $complaint->id,
+
+                'reference_number' =>
+                    $complaint->reference_number,
+
+                'notes' =>
+                    $validated['notes'],
+
+            ]
+
+        )->afterCommit();
+
+
+        return $this->success(
+            'تم إرسال الطلب بنجاح'
+        );
     }
     public function getAllComplaint()
     {

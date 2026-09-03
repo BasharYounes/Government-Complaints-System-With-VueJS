@@ -1,6 +1,21 @@
 <script setup>
-import { ref, computed } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import {
+    ref,
+    computed,
+    onMounted,
+    watch,
+} from 'vue';
+
+import {
+    Head,
+    Link,
+    router,
+    usePage,
+} from '@inertiajs/vue3';
+
+import {
+    initializeWebNotifications
+} from '../../services/firebaseMessaging';
 
 const props = defineProps({
     user: Object,
@@ -23,8 +38,219 @@ const props = defineProps({
     },
 });
 
-const unreadCount = computed(() => props.notifications.filter(n => !n.read).length);
+const notificationItems = ref([
+    ...props.notifications
+]);
+
+
+watch(
+    () => props.notifications,
+    value => {
+
+        notificationItems.value = [
+            ...value
+        ];
+    }
+);
+
+
+const unreadCount = computed(
+    () =>
+        notificationItems.value
+            .filter(notification =>
+                !notification.read
+            )
+            .length
+);
+
 const showNotifications = ref(false);
+
+const refreshNotifications = async () => {
+
+    const response =
+        await window.axios.get(
+            '/notifications'
+        );
+
+
+    notificationItems.value =
+        response.data
+            .data
+            .notifications;
+};
+
+const handleForegroundMessage =
+    async payload => {
+
+        await refreshNotifications();
+
+
+        if (
+            Notification.permission
+            !== 'granted'
+        ) {
+            return;
+        }
+
+
+        const title =
+            payload.notification?.title
+            ?? 'إشعار جديد';
+
+
+        const browserNotification =
+            new Notification(
+                title,
+                {
+                    body:
+                        payload.notification?.body
+                        ?? '',
+                }
+            );
+
+
+        browserNotification.onclick =
+            () => {
+
+                window.focus();
+
+
+                const url =
+                    payload.data?.url;
+
+
+                if (!url) {
+                    return;
+                }
+
+
+                const target =
+                    new URL(
+                        url,
+                        window.location.origin
+                    );
+
+
+                router.visit(
+                    target.pathname
+                );
+            };
+    };
+
+    const toggleNotifications = async () => {
+        showNotifications.value =
+            !showNotifications.value;
+
+        if (!showNotifications.value) {
+            return;
+        }
+
+        try {
+            await initializeWebNotifications({
+                requestPermission: true,
+                onForegroundMessage:
+                    handleForegroundMessage,
+            });
+        } catch (error) {
+            console.error(
+                '[FCM] Notification initialization failed:',
+                error
+            );
+        }
+    };
+
+onMounted(async () => {
+    try {
+        await initializeWebNotifications({
+            requestPermission: false,
+            onForegroundMessage: handleForegroundMessage,
+        });
+    } catch (error) {
+        console.error(
+            '[FCM] Initialization failed:',
+            error
+        );
+    }
+});
+
+
+const openNotification =
+    async notification => {
+
+        if (!notification.read) {
+
+            await window.axios.patch(
+                `/notifications/${notification.id}/read`
+            );
+
+
+            notification.read = true;
+        }
+
+
+        showNotifications.value = false;
+
+
+        if (!notification.url) {
+            return;
+        }
+
+
+        const target =
+            new URL(
+                notification.url,
+                window.location.origin
+            );
+
+
+        router.visit(
+            target.pathname
+        );
+    };
+
+    const markAllNotificationsAsRead =
+    async () => {
+
+        await window.axios.patch(
+            '/notifications/read-all'
+        );
+
+
+        notificationItems.value =
+            notificationItems.value.map(
+                notification => ({
+                    ...notification,
+                    read: true,
+                })
+            );
+    };
+const page = usePage();
+
+const trackingNumber = ref('');
+
+const trackingError = computed(() => {
+    return page.props.errors?.reference_number ?? '';
+});
+
+
+const trackComplaint = () => {
+
+    const reference = trackingNumber.value.trim();
+
+    if (!reference) {
+        return;
+    }
+
+    router.get(
+        '/complaints/track',
+        {
+            reference_number: reference,
+        },
+        {
+            preserveScroll: true,
+        }
+    );
+};
 
 const statusMap = {
     pending:    { label: 'قيد المراجعة',  color: 'amber' },
@@ -59,7 +285,10 @@ const logout = () => router.post('/logout');
             <div class="topbar-actions">
                 <!-- Notifications -->
                 <div class="notif-wrapper">
-                    <button class="icon-btn" @click="showNotifications = !showNotifications">
+                    <button
+                        class="icon-btn"
+                        @click="toggleNotifications"
+                    >
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                         </svg>
@@ -68,14 +297,59 @@ const logout = () => router.post('/logout');
 
                     <Transition name="dropdown">
                         <div v-if="showNotifications" class="notif-dropdown">
-                            <div class="dropdown-header">الإشعارات</div>
-                            <div v-if="notifications.length === 0" class="dropdown-empty">لا توجد إشعارات</div>
-                            <div v-for="n in notifications" :key="n.id" class="notif-item" :class="{ unread: !n.read }">
+                            <div class="dropdown-header">
+
+                                <span>
+                                    الإشعارات
+                                </span>
+
+                                <button
+                                    v-if="unreadCount > 0"
+                                    type="button"
+                                    class="mark-all-btn"
+                                    @click.stop="markAllNotificationsAsRead"
+                                >
+                                    تحديد الكل كمقروء
+                                </button>
+
+                            </div>
+                            <div
+                                v-if="notificationItems.length === 0"
+                                class="dropdown-empty"
+                            >
+                                لا توجد إشعارات
+                            </div>
+
+
+                            <div
+                                v-for="notification in notificationItems"
+                                :key="notification.id"
+                                class="notif-item"
+                                :class="{
+                                    unread: !notification.read
+                                }"
+                                @click="openNotification(notification)"
+                            >
+
                                 <div class="notif-dot-indicator"></div>
+
+
                                 <div class="notif-content">
-                                    <p class="notif-text">{{ n.message }}</p>
-                                    <span class="notif-time">{{ n.time }}</span>
+
+                                    <p class="notif-title">
+                                        {{ notification.title }}
+                                    </p>
+
+                                    <p class="notif-text">
+                                        {{ notification.body }}
+                                    </p>
+
+                                    <span class="notif-time">
+                                        {{ notification.time }}
+                                    </span>
+
                                 </div>
+
                             </div>
                         </div>
                     </Transition>
@@ -191,7 +465,7 @@ const logout = () => router.post('/logout');
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
                         </svg>
                         <p>لم تقدّم أي شكوى بعد</p>
-                        <Link href="/complaints/create" class="empty-cta">قدّم شكوى الآن</Link>
+                        <Link href="/create-complaint" class="empty-cta">قدّم شكوى الآن</Link>
                     </div>
 
                     <table v-else class="complaints-table">
@@ -234,7 +508,7 @@ const logout = () => router.post('/logout');
                             </h2>
                         </div>
                         <div class="quick-actions">
-                            <Link href="/complaints/create" class="quick-action primary">
+                            <Link href="/create-complaint" class="quick-action primary">
                                 <div class="qa-icon">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                                 </div>
@@ -271,14 +545,51 @@ const logout = () => router.post('/logout');
                                 تتبع شكوى
                             </h2>
                         </div>
-                        <div class="track-form">
+                        <form
+                            class="track-form"
+                            @submit.prevent="trackComplaint"
+                        >
+
                             <div class="track-input-wrap">
-                                <input type="text" class="track-input" placeholder="أدخل رقم التتبع..." dir="ltr"/>
+
+                                <input
+                                    v-model="trackingNumber"
+                                    type="text"
+                                    class="track-input"
+                                    placeholder="أدخل رقم التتبع..."
+                                    autocomplete="off"
+                                    dir="ltr"
+                                />
+
                             </div>
-                            <button class="track-btn">بحث</button>
-                        </div>
-                        <p class="track-hint">مثال: GC-2024-00123</p>
-                    </div>
+
+
+                            <button
+                                type="submit"
+                                class="track-btn"
+                                :disabled="!trackingNumber.trim()"
+                            >
+                                بحث
+                            </button>
+
+                        </form>
+
+
+                        <p
+                            v-if="trackingError"
+                            class="track-error"
+                        >
+                            {{ trackingError }}
+                        </p>
+
+
+                        <p
+                            v-else
+                            class="track-hint"
+                        >
+                            مثال: 2026-MOTI001-000003-VY3
+                        </p>
+                                            </div>
 
                 </div>
             </section>
@@ -495,6 +806,19 @@ const logout = () => router.post('/logout');
 }
 .track-btn:hover { opacity: .88; }
 .track-hint { padding: 0 1rem .85rem; font-size: .67rem; color: rgba(255,255,255,.25); }
+.track-error {
+    padding: 0 1rem .85rem;
+
+    color: #f87171;
+
+    font-size: .68rem;
+}
+
+.track-btn:disabled {
+    opacity: .45;
+
+    cursor: not-allowed;
+}
 
 /* ── Responsive ── */
 @media (max-width: 1024px) {

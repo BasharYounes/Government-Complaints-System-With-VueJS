@@ -2,60 +2,105 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-
+use App\Http\Resources\NotificationResource;
 use App\Repositories\NotificationRepository;
-
-use App\Http\Requests\MarkAsReadRequest;
-use App\Traits\ApiResponse;
+use Illuminate\Http\Request;
 
 
 class NotificationController extends Controller
 {
-    public function __construct(public NotificationRepository $notificationRepository) {}
+    public function __construct(
+        private readonly NotificationRepository $notificationRepository
+    ) {}
 
-    public function index(Request $request)
-    {
-        return $request->user()->notifications()->orderBy('created_at', 'desc')->get();
-    }
 
-    public function show($id)
-    {
-        $user = auth()->user();
+    public function index(
+        Request $request
+    ) {
 
-        $notification = $this->notificationRepository->findNotification($id, $user);
+        $user = $request->user();
 
-        $notification = $this->notificationRepository->MarkAsReadNotification($notification);
 
-        return $this->success('تم جلب تفاصيل الإشعار بنجاح',$notification);
-    }
+        $notifications =
+            $this->notificationRepository
+                ->latestForUser($user);
 
-    public function markAsRead(MarkAsReadRequest $request)
-    {
-        $user = auth()->user();
 
-        if ($request->mark_all) {
+        return $this->success(
 
-            $this->notificationRepository->MarkAsReadAllNotification($user);
+            'تم جلب الإشعارات بنجاح',
 
-            return $this->success(
-                'All notifications marked as read',
-                ['unread_count' => $user->notifications()->where('is_read', false)->count()]
-            );
-        }
+            [
 
-        $notification = $this->notificationRepository->findNotification($request->notification_id,$user);
+                'notifications' =>
+                    NotificationResource::collection(
+                        $notifications
+                    )->resolve(),
 
-        if (!$notification->is_read)
-        {
-            $this->notificationRepository->MarkAsReadNotification($notification);
-        }
+                'unread_count' =>
+                    $this->notificationRepository
+                        ->unreadCount($user),
 
-        return $this->success('Notification marked as read',
-            ['unread_count' => $user->notifications()->where('is_read', false)->count()]
+            ]
         );
     }
 
 
+    public function markAsRead(
+        Request $request,
+        int $id
+    ) {
 
+        $user = $request->user();
+
+
+        $notification =
+            $this->notificationRepository
+                ->findForUser(
+                    $id,
+                    $user
+                );
+
+
+        $this->notificationRepository
+            ->markAsRead(
+                $notification
+            );
+
+
+        return $this->success(
+
+            'تم تحديد الإشعار كمقروء',
+
+            [
+
+                'unread_count' =>
+                    $this->notificationRepository
+                        ->unreadCount($user),
+
+            ]
+        );
+    }
+
+
+    public function markAllAsRead(
+        Request $request
+    ) {
+
+        $user = $request->user();
+
+
+        $this->notificationRepository
+            ->markAllAsRead($user);
+
+
+        return $this->success(
+
+            'تم تحديد جميع الإشعارات كمقروءة',
+
+            [
+                'unread_count' => 0,
+            ]
+        );
+    }
 }

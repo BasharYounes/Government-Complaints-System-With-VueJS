@@ -1,5 +1,5 @@
 <?php
-namespace App\Services;
+namespace App\Services\Complaints;
 
 use App\Models\Complaint;
 use App\Models\ComplaintAuditDetail;

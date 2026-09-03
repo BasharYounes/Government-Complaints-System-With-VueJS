@@ -28,14 +28,36 @@ Route::middleware(['AuthenticateUser'])->group(function () {
 
     Route::post('/store-fcm-token', [AuthController::class, 'storeFCM_Token']);
 
-    Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::get('/show-notification/{id}', [NotificationController::class, 'show']);
-    Route::post('/mark-is-read', [NotificationController::class,'markAsRead']);
+    Route::prefix('notifications')
+        ->controller(NotificationController::class)
+        ->group(function () {
+
+            Route::get(
+                '/',
+                'index'
+            );
+
+            Route::patch(
+                '/read-all',
+                'markAllAsRead'
+            );
+
+            Route::patch(
+                '/{id}/read',
+                'markAsRead'
+            )->whereNumber('id');
+
+        });
 
     Route::prefix('complaints')->group(function () {
         Route::post('create', [ComplaintController::class, 'create']);
         Route::get('show/{id}', [ComplaintController::class, 'show']);
-        Route::post('update/{id}', [ComplaintController::class, 'update']);
+        Route::patch(
+            'complaints/{id}',
+            [ComplaintController::class, 'update']
+        )
+            ->whereNumber('id')
+            ->name('user.complaints.update');
         Route::delete('delete/{id}', [ComplaintController::class, 'destroy']);
         Route::post('add-attachment/{id}', [ComplaintController::class, 'addAttachment']);
         Route::get('get-user-complaints', [ComplaintController::class, 'getComplaintsforUser']);

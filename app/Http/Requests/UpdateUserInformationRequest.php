@@ -3,38 +3,85 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateUserInformationRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
-     */
+
     public function rules(): array
     {
         return [
-            'name' => 'sometimes|string',
-            'email' => 'sometimes|email|max:255|unique:users',
-            'image' => 'sometimes|mimes:jpeg,png,jpg,gif,svg',        
-            'phone' => 'sometimes|string|max:255',
+
+            'name' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:255',
+            ],
+
+            'email' => [
+                'sometimes',
+                'required',
+                'email',
+                'max:255',
+
+                Rule::unique('users', 'email')
+                    ->ignore($this->user()?->id),
+            ],
+
+            'phone' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'image' => [
+                'sometimes',
+                'nullable',
+                'image',
+                'mimes:jpeg,png,jpg,gif,svg',
+                'max:4096',
+            ],
         ];
     }
 
-    public function messages()
+
+    public function messages(): array
     {
         return [
-            'name.max' => 'الاسم يجب ألا يتجاوز ال 255 حرف',
-            'email.unique' => 'البريد الإلكتروني مُستخدم مسبقًا!',
-            'email.required' => 'يجب إدخال البريد الإلكتروني!'
+
+            'name.required' =>
+                'يجب إدخال الاسم.',
+
+            'name.max' =>
+                'الاسم يجب ألا يتجاوز 255 حرفًا.',
+
+            'email.required' =>
+                'يجب إدخال البريد الإلكتروني.',
+
+            'email.email' =>
+                'صيغة البريد الإلكتروني غير صحيحة.',
+
+            'email.unique' =>
+                'البريد الإلكتروني مستخدم مسبقًا.',
+
+            'phone.max' =>
+                'رقم الهاتف طويل جدًا.',
+
+            'image.image' =>
+                'الملف المختار يجب أن يكون صورة.',
+
+            'image.mimes' =>
+                'صيغة الصورة غير مدعومة.',
+
+            'image.max' =>
+                'حجم الصورة يجب ألا يتجاوز 4 ميغابايت.',
         ];
     }
 }

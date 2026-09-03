@@ -4,89 +4,257 @@ namespace App\Services\Notifications;
 
 use App\Models\Notification;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
+use Kreait\Firebase\Contract\Messaging;
 use Kreait\Firebase\Messaging\CloudMessage;
+use Throwable;
 
 
 class NotificationService
 {
-    public function send(User $user, string $type, array $data = []): void
-    {
-        $content = $this->getTemplate($type, $data);
+    public function __construct(
+        private readonly Messaging $messaging
+    ) {}
 
-        $this->sendFCM($user, $content);
 
-        $this->saveToDatabase($user, $content);
+    public function send(
+        User $user,
+        string $type,
+        array $data = []
+    ): Notification {
+
+        $content = $this->resolveContent(
+            $type,
+            $data
+        );
+
+
+        $url = $this->resolveUrl(
+            $type,
+            $data
+        );
+
+
+        $notification = $this->store(
+            $user,
+            $type,
+            $content,
+            [
+                ...$data,
+                'url' => $url,
+            ]
+        );
+
+
+        $this->sendWebPush(
+            $user,
+            $notification,
+            $content,
+            $url
+        );
+
+
+        return $notification;
     }
 
-    private function getTemplate(string $type, array $data): array
-    {
-        $template = config("notifications.templates.$type");
 
-        if (!$template) {
-            $template = [
-                'title' => 'إشعار جديد',
-                'body' => 'لديك إشعار جديد'
-            ];
-        }
+    private function resolveContent(
+        string $type,
+        array $data
+    ): array {
+
+        $template = config(
+            "notifications.templates.{$type}",
+            config('notifications.fallback')
+        );
+
 
         return [
-            'title' => $this->replacePlaceholders($template['title'], $data),
-            'body' => $this->replacePlaceholders($template['body'], $data)
+
+            'title' =>
+                $this->replacePlaceholders(
+                    $template['title'],
+                    $data
+                ),
+
+            'body' =>
+                $this->replacePlaceholders(
+                    $template['body'],
+                    $data
+                ),
         ];
     }
 
-    protected function replacePlaceholders(string $text, array $data): string
-    {
-        // إذا لم تكن هناك متغيرات في النص، أعد النص كما هو
-        if (empty($data) || !preg_match('/\{\{[^}]+\}\}/', $text)) {
-            return $text;
+
+    private function replacePlaceholders(
+        string $text,
+        array $data
+    ): string {
+
+        foreach ($data as $key => $value) {
+
+            if (
+                ! is_scalar($value) &&
+                $value !== null
+            ) {
+                continue;
+            }
+
+
+            $text = str_replace(
+                '{{'.$key.'}}',
+                (string) $value,
+                $text
+            );
         }
 
-        // استبدل المتغيرات الموجودة
-        foreach ($data as $key => $value) {
-            $text = str_replace("{{$key}}", $value, $text);
-        }
 
         return $text;
     }
 
-    private function sendFCM(User $user, array $content): void
-    {
-        try {
-            if (empty($user->fcm_token)) {
-                \Log::warning('المستخدم لا يملك FCM token: ' . $user->id);
-                return;
-            }
 
-            \Log::info('محاولة إرسال إشعار للمستخدم: ' . $user->id . ' مع token: ' . substr($user->fcm_token, 0, 20) . '...');
+    private function resolveUrl(
+        string $type,
+        array $data
+    ): string {
 
-            $messaging = app('firebase.messaging');
+        if (
+            in_array(
+                $type,
+                [
+                    'complaint_status_changed',
+                    'RequestAdditionalInformation',
+                ],
+                true
+            )
+            &&
+            isset($data['complaint_id'])
+        ) {
 
-            $message = CloudMessage::withTarget('token',
-                $user->fcm_token)
-                ->withNotification([
-                    'title' => $content['title'],
-                    'body' => $content['body']
-                ]);
-
-            \Log::info('تم إنشاء الرسالة بنجاح، محاولة الإرسال...');
-
-            $result = $messaging->send($message);
-
-            \Log::info('تم إرسال الإشعار بنجاح للمستخدم: ' . $user->id . ' - النتيجة: ' . json_encode($result));
-        } catch (\Exception $e) {
-            \Log::error('فشل إرسال الإشعار للمستخدم ' . $user->id . ': ' . $e->getMessage());
-            \Log::error('تفاصيل الخطأ: ' . $e->getTraceAsString());
+            return url(
+                '/complaints/'
+                .$data['complaint_id']
+            );
         }
+
+
+        if ($type === 'account_locked') {
+
+            return url(
+                '/user-log-in'
+            );
+        }
+
+
+        return url('/home');
     }
 
 
-    private function saveToDatabase(User $user, array $content): void
-    {
-        Notification::create([
-            'user_id' => $user->id,
-            'title' => $content['title'],
-            'body' => $content['body']
+    private function store(
+        User $user,
+        string $type,
+        array $content,
+        array $data
+    ): Notification {
+
+        return Notification::create([
+
+            'user_id' =>
+                $user->id,
+
+            'type' =>
+                $type,
+
+            'title' =>
+                $content['title'],
+
+            'body' =>
+                $content['body'],
+
+            'data' =>
+                $data,
+
+            'is_read' =>
+                false,
         ]);
+    }
+
+
+    private function sendWebPush(
+        User $user,
+        Notification $notification,
+        array $content,
+        string $url
+    ): void {
+
+        if (blank($user->fcm_token)) {
+            return;
+        }
+
+
+        try {
+
+            $message = CloudMessage::fromArray([
+
+                'token' =>
+                    $user->fcm_token,
+
+
+                'data' => [
+
+                    'notification_id' =>
+                        (string) $notification->id,
+
+                    'type' =>
+                        (string) $notification->type,
+
+                    'url' =>
+                        $url,
+
+                ],
+
+
+                'webpush' => [
+
+                    'notification' => [
+
+                        'title' =>
+                            $content['title'],
+
+                        'body' =>
+                            $content['body'],
+
+                    ],
+
+                    'fcm_options' => [
+
+                        'link' =>
+                            $url,
+
+                    ],
+                ],
+            ]);
+
+
+            $this->messaging->send(
+                $message
+            );
+
+        } catch (Throwable $exception) {
+
+            Log::error(
+                'Failed to send Firebase notification.',
+                [
+                    'user_id' =>
+                        $user->id,
+
+                    'notification_id' =>
+                        $notification->id,
+
+                    'error' =>
+                        $exception->getMessage(),
+                ]
+            );
+        }
     }
 }
