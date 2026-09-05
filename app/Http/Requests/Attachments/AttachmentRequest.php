@@ -22,7 +22,14 @@ class AttachmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file' => 'sometimes|file|max:10240', // الحد الأقصى لحجم الملف 10 ميجابايت
+
+            'file' => [
+                'sometimes',
+                'file',
+                'mimes:pdf,jpg,jpeg,png,doc,docx',
+                'max:10240',
+            ],
+
         ];
     }
 
@@ -32,6 +39,7 @@ class AttachmentRequest extends FormRequest
             'file.required' => 'يجب إرفاق ملف.',
             'file.file' => 'يجب أن يكون الملف المرفق ملفًا صالحًا.',
             'file.max' => 'حجم الملف المرفق يجب ألا يتجاوز 10 ميجابايت.',
+            'file.mimes' => 'نوع الملف غير مدعوم. الملفات المسموحة: PDF، JPG، PNG، DOC، DOCX.',
             'complaint_id.required' => 'معرف الشكوى مطلوب.',
             'complaint_id.exists' => 'الشكوى المحددة غير موجودة.',
         ];

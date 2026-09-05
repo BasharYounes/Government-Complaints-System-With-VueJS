@@ -3,11 +3,33 @@ import { computed } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
+
     complaints: {
-        type: Array,
-        default: () => [],
+        type: Object,
+
+        default: () => ({
+            data: [],
+            current_page: 1,
+            last_page: 1,
+            total: 0,
+            prev_page_url: null,
+            next_page_url: null,
+        }),
     },
+
 });
+
+
+const complaintItems =
+    computed(() =>
+        props.complaints?.data ?? []
+    );
+
+
+const totalComplaints =
+    computed(() =>
+        props.complaints?.total ?? 0
+    );
 
 const statusMap = {
     new: {
@@ -27,8 +49,6 @@ const statusMap = {
         class: 'status-rejected',
     },
 };
-
-const totalComplaints = computed(() => props.complaints.length);
 
 const getStatus = (status) => {
     return statusMap[status] ?? {
@@ -190,7 +210,7 @@ const getStatus = (status) => {
 
             <!-- Empty State -->
             <section
-                v-if="complaints.length === 0"
+                v-if="complaintItems.length === 0"
                 class="empty-panel"
             >
 
@@ -250,7 +270,7 @@ const getStatus = (status) => {
             >
 
                 <Link
-                    v-for="complaint in complaints"
+                    v-for="complaint in complaintItems"
                     :key="complaint.id"
                     :href="`/complaints/${complaint.id}`"
                     class="complaint-card-link"
@@ -328,6 +348,42 @@ const getStatus = (status) => {
                 </Link>
 
             </section>
+
+            <div
+                v-if="complaints.last_page > 1"
+                class="pagination"
+            >
+
+                <Link
+                    v-if="complaints.prev_page_url"
+                    :href="complaints.prev_page_url"
+                    class="page-btn"
+                    preserve-scroll
+                >
+                    السابق
+                </Link>
+
+
+                <span class="page-info">
+
+                    الصفحة
+                    {{ complaints.current_page }}
+                    من
+                    {{ complaints.last_page }}
+
+                </span>
+
+
+                <Link
+                    v-if="complaints.next_page_url"
+                    :href="complaints.next_page_url"
+                    class="page-btn"
+                    preserve-scroll
+                >
+                    التالي
+                </Link>
+
+            </div>
 
         </main>
 
@@ -901,6 +957,51 @@ const getStatus = (status) => {
     font-size: .75rem;
 
     word-break: break-word;
+}
+
+/* Pagination */
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 12px;
+
+    margin-top: 1.5rem;
+}
+
+.page-btn {
+    padding: 8px 15px;
+
+    color: #d4a843;
+
+    background:
+        rgba(212,168,67,.08);
+
+    border:
+        1px solid
+        rgba(212,168,67,.22);
+
+    border-radius: 8px;
+
+    text-decoration: none;
+
+    font-size: .76rem;
+
+    transition: all .2s;
+}
+
+.page-btn:hover {
+    background:
+        rgba(212,168,67,.15);
+}
+
+.page-info {
+    color:
+        rgba(255,255,255,.4);
+
+    font-size: .72rem;
 }
 
 

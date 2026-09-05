@@ -80,16 +80,56 @@ class ComplaintRepository
         $complaint->delete();
     }
 
-    public function getComplaintsByUser()
-    {
-        return auth()->user()
-            ->complaints()
+    public function getComplaintsByUser(
+        int $userId,
+        int $perPage = 12
+    ) {
+        return Complaint::query()
+            ->where('user_id', $userId)
+            ->select([
+                'id',
+                'user_id',
+                'government_entity_id',
+                'reference_number',
+                'type',
+                'description',
+                'status',
+                'created_at',
+            ])
             ->with([
                 'governmentEntity:id,name',
-                'attachments',
             ])
-            ->latest()
-            ->get();
+            ->latest('created_at')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
+    public function getComplaintForUser(
+        int $complaintId,
+        int $userId
+    ): ?Complaint {
+
+        return Complaint::query()
+            ->whereKey($complaintId)
+            ->where('user_id', $userId)
+            ->select([
+                'id',
+                'user_id',
+                'government_entity_id',
+                'reference_number',
+                'type',
+                'description',
+                'status',
+                'location',
+                'created_at',
+                'updated_at',
+            ])
+            ->with([
+                'governmentEntity:id,name',
+
+                'attachments:id,complaint_id,file_name,file_path,mime_type,file_size',
+            ])
+            ->first();
     }
 
     public function findByReferenceNumberForUser(

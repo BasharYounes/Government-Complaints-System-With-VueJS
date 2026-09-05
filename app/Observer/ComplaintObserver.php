@@ -29,27 +29,33 @@ class ComplaintObserver
     public function updating(Complaint $complaint): void
     {
             $original = $complaint->getOriginal();
+
             $dirty = $complaint->getDirty();
 
             if (empty($dirty)) {
                 return;
             }
-            $action = $this->determineAction($dirty);
-            $description = $this->generateDescription($action, $dirty, $original);
-            $this->createAuditLog($complaint, $action, $description);
-            $this->createAuditDetails($complaint, $original, $dirty);
 
-             if ($action['Is_status_changed']) {
-            dispatch(new \App\Jobs\SendComplaintNotificationJob(
-                $complaint->user_id,
-                'complaint_status_changed',
-                [
-                    'reference_number' => $complaint->reference_number,
-                    'old_status' => $original['status'] ?? 'unknown',
-                    'new_status' => $dirty['status'],
-                ]
-            ));
-        }
+            $action = $this->determineAction($dirty);
+
+            $description = $this->generateDescription(
+                $action,
+                $dirty,
+                $original
+            );
+
+            $this->createAuditLog(
+                $complaint,
+                $action,
+                $description
+            );
+
+            $this->createAuditDetails(
+                $complaint,
+                $original,
+                $dirty
+            );
+
     }
 
     /**

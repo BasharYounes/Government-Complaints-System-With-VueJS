@@ -7,10 +7,14 @@ use Illuminate\Support\Facades\Cache;
 
 class GovernmentEntityRepository
 {
-    public function getCodeById($id)
+    public function getCodeById(int $id)
     {
-        $entity = GovernmentEntities::where('id', $id)->firstOrFail();
-        return $entity;
+        return GovernmentEntities::query()
+            ->select([
+                'id',
+                'code',
+            ])
+            ->findOrFail($id);
     }
 
     public function getAllEntities()

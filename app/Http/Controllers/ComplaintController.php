@@ -47,53 +47,166 @@ class ComplaintController extends Controller
     {
         $user = auth()->user();
 
-        $complaints = $user->complaints()
-            ->with('governmentEntity:id,name')
-            ->latest()
-            ->get();
 
-        $stats = $this->buildHomeStats($complaints);
+        $stats =
+            $this->getHomeStats(
+                $user->id
+            );
 
-        $recentComplaints = $complaints
-            ->take(5)
-            ->map(fn ($complaint) => [
-                'id' => $complaint->id,
-                'tracking_number' => $complaint->reference_number,
-                'subject' => $complaint->type,
-                'department' => $complaint->governmentEntity?->name ?? 'غير محدد',
-                'status' => $this->mapComplaintStatusForHome($complaint->status),
-                'created_at' => $complaint->created_at?->format('Y-m-d'),
-            ])
-            ->values();
 
-        $notifications = $user
-            ->notifications()
-            ->latest()
-            ->limit(20)
-            ->get();
+        $recentComplaints =
+            $user->complaints()
+                ->select([
+                    'id',
+                    'user_id',
+                    'government_entity_id',
+                    'reference_number',
+                    'type',
+                    'status',
+                    'created_at',
+                ])
+                ->with([
+                    'governmentEntity:id,name',
+                ])
+                ->latest()
+                ->limit(5)
+                ->get()
+                ->map(fn ($complaint) => [
+
+                    'id' =>
+                        $complaint->id,
+
+                    'tracking_number' =>
+                        $complaint
+                            ->reference_number,
+
+                    'subject' =>
+                        $complaint->type,
+
+                    'department' =>
+                        $complaint
+                            ->governmentEntity
+                            ?->name
+                        ?? 'غير محدد',
+
+                    'status' =>
+                        $this
+                            ->mapComplaintStatusForHome(
+                                $complaint->status
+                            ),
+
+                    'created_at' =>
+                        $complaint
+                            ->created_at
+                            ?->format('Y-m-d'),
+
+                ])
+                ->values();
+
+
+        $notifications =
+            $user->notifications()
+                ->select([
+                    'id',
+                    'user_id',
+                    'type',
+                    'title',
+                    'body',
+                    'data',
+                    'is_read',
+                    'created_at',
+                ])
+                ->latest()
+                ->limit(20)
+                ->get();
+
 
         return [
+
             'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
+
+                'id' =>
+                    $user->id,
+
+                'name' =>
+                    $user->name,
+
+                'email' =>
+                    $user->email,
+
             ],
-            'stats' => $stats,
-            'recentComplaints' => $recentComplaints,
+
+
+            'stats' =>
+                $stats,
+
+
+            'recentComplaints' =>
+                $recentComplaints,
+
+
             'notifications' =>
+
                 NotificationResource::collection(
                     $notifications
                 )->resolve(),
+
         ];
     }
+    private function getHomeStats(
+        int $userId
+    ): array {
 
-    private function buildHomeStats($complaints): array
-    {
+        $stats =
+            \App\Models\Complaint::query()
+                ->where(
+                    'user_id',
+                    $userId
+                )
+                ->selectRaw('
+                    COUNT(*) AS total,
+
+                    SUM(
+                        CASE
+                            WHEN status IN ("new", "in_progress")
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS pending,
+
+                    SUM(
+                        CASE
+                            WHEN status = "completed"
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS resolved,
+
+                    SUM(
+                        CASE
+                            WHEN status = "rejected"
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS rejected
+                ')
+                ->first();
+
+
         return [
-            'total' => $complaints->count(),
-            'pending' => $complaints->whereIn('status', ['new', 'in_progress'])->count(),
-            'resolved' => $complaints->where('status', 'completed')->count(),
-            'rejected' => $complaints->where('status', 'rejected')->count(),
+
+            'total' =>
+                (int) ($stats->total ?? 0),
+
+            'pending' =>
+                (int) ($stats->pending ?? 0),
+
+            'resolved' =>
+                (int) ($stats->resolved ?? 0),
+
+            'rejected' =>
+                (int) ($stats->rejected ?? 0),
+
         ];
     }
 
@@ -144,12 +257,21 @@ class ComplaintController extends Controller
      */
    public function show($id)
     {
-        $complaint = $this->complaintRepository->getComplaintById($id);
+        $complaint =
+            $this->complaintRepository
+                ->getComplaintForUser(
+                    $id,
+                    auth()->id()
+                );
 
-        if ((int) $complaint->user_id !== (int) auth()->id()) {
+        if (! $complaint) {
+
             return redirect()
                 ->route('user.complaints')
-                ->with('error', 'الشكوى غير موجودة أو لا تملك صلاحية الوصول إليها.');
+                ->with(
+                    'error',
+                    'الشكوى غير موجودة أو لا تملك صلاحية الوصول إليها.'
+                );
         }
 
         return Inertia::render('User/Complaint/ComplaintDetails', [
@@ -264,11 +386,62 @@ class ComplaintController extends Controller
 
     public function getComplaintsforUser()
     {
-        $complaints = $this->complaintRepository->getComplaintsByUser();
+        $complaints =
+            $this->complaintRepository
+                ->getComplaintsByUser(
+                    auth()->id(),
+                    12
+                );
 
-        return Inertia::render('User/Complaint/MyComplaints', [
-            'complaints' => $complaints,
-        ]);
+        $complaints->through(
+            fn ($complaint) => [
+                'id' =>
+                    $complaint->id,
+
+                'reference_number' =>
+                    $complaint->reference_number,
+
+                'type' =>
+                    $complaint->type,
+
+                'description' =>
+                    Str::limit(
+                        $complaint->description,
+                        180
+                    ),
+
+                'status' =>
+                    $complaint->status,
+
+                'government_entity' =>
+                    $complaint->governmentEntity
+                        ? [
+                            'id' =>
+                                $complaint
+                                    ->governmentEntity
+                                    ->id,
+
+                            'name' =>
+                                $complaint
+                                    ->governmentEntity
+                                    ->name,
+                        ]
+                        : null,
+
+                'created_at' =>
+                    $complaint
+                        ->created_at
+                        ?->format('Y-m-d'),
+            ]
+        );
+
+        return Inertia::render(
+            'User/Complaint/MyComplaints',
+            [
+                'complaints' =>
+                    $complaints,
+            ]
+        );
     }
 
     public function track(
