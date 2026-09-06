@@ -33,7 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => PermissionMiddleware::class,
         ]);
 
-        $middleware->trustHosts(at: ['your-domain.com']);
+        // $middleware->trustHosts(at: ['your-domain.com']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->renderable(function (Throwable $e, $request) {
