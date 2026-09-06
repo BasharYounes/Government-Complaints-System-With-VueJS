@@ -42,6 +42,10 @@ class GovernmentEntitiesSeeder extends Seeder
             ['name' => 'شركة محروقات - سادكوب', 'code' => 'SADCOP001', 'location' => 'دمشق - القابون'],
         ];
 
-        GovernmentEntities::insert($entities);
+        GovernmentEntities::upsert(
+            $entities,
+            ['code'],
+            ['name', 'location']
+        );
     }
 }
