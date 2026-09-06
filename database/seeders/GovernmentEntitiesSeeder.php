@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\GovernmentEntities;
+use Illuminate\Support\Facades\Cache;
 
 class GovernmentEntitiesSeeder extends Seeder
 {
@@ -47,5 +48,7 @@ class GovernmentEntitiesSeeder extends Seeder
             ['code'],
             ['name', 'location']
         );
+
+        Cache::forget('government_entities');
     }
 }
