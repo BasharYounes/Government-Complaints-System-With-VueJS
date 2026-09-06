@@ -16,7 +16,6 @@ RUN npm ci
 COPY . .
 
 
-# Firebase values are required by Vite at BUILD time
 ARG VITE_FIREBASE_API_KEY
 ARG VITE_FIREBASE_AUTH_DOMAIN
 ARG VITE_FIREBASE_PROJECT_ID
@@ -38,7 +37,7 @@ RUN npm run build
 
 
 # =========================================================
-# Laravel / Apache runtime
+# Laravel runtime
 # =========================================================
 
 FROM php:8.2-apache
@@ -47,6 +46,7 @@ RUN apt-get update \
     && apt-get install -y \
         git \
         unzip \
+        supervisor \
         libzip-dev \
         libicu-dev \
         libonig-dev \
@@ -64,14 +64,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 
-# Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 
 WORKDIR /var/www/html
 
 
-# Install PHP dependencies first for Docker layer caching
 COPY composer.json composer.lock ./
 
 RUN composer install \
@@ -82,22 +80,21 @@ RUN composer install \
     --no-scripts
 
 
-# Copy Laravel project
 COPY . .
 
 
-# Copy compiled Vue / Vite assets
 COPY --from=frontend /app/public/build ./public/build
 
 
-# Optimize Composer autoload
 RUN composer dump-autoload \
     --no-dev \
     --classmap-authoritative \
     --no-scripts
 
 
-# Laravel writable directories
+RUN php artisan package:discover --ansi
+
+
 RUN mkdir -p \
         storage/framework/cache \
         storage/framework/sessions \
@@ -108,14 +105,21 @@ RUN mkdir -p \
     && chmod -R ug+rwx storage bootstrap/cache
 
 
-# Laravel public storage symlink
 RUN rm -rf public/storage \
     && ln -s /var/www/html/storage/app/public /var/www/html/public/storage
 
 
-# Apache VirtualHost → Laravel /public
+# =========================================================
+# Apache → Render port 10000
+# =========================================================
+
+RUN sed -ri \
+    's/Listen 80/Listen 10000/' \
+    /etc/apache2/ports.conf
+
+
 RUN printf '%s\n' \
-    '<VirtualHost *:80>' \
+    '<VirtualHost *:10000>' \
     '    DocumentRoot /var/www/html/public' \
     '' \
     '    <Directory /var/www/html/public>' \
@@ -129,6 +133,19 @@ RUN printf '%s\n' \
     > /etc/apache2/sites-available/000-default.conf
 
 
-EXPOSE 80
+# =========================================================
+# Supervisor + startup
+# =========================================================
 
-CMD ["apache2-foreground"]
+COPY docker/supervisord.conf \
+    /etc/supervisor/conf.d/supervisord.conf
+
+COPY docker/start-container.sh \
+    /usr/local/bin/start-container
+
+RUN chmod +x /usr/local/bin/start-container
+
+
+EXPOSE 10000
+
+CMD ["/usr/local/bin/start-container"]
