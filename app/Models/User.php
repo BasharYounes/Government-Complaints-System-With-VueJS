@@ -18,8 +18,7 @@ class User extends Authenticatable
     use HasRoles;
 
 
-    protected $guard_name = 'api';
-
+    protected $guard_name = 'web';
 
     protected $fillable = [
         'name',

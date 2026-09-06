@@ -95,6 +95,9 @@ class RolesAndPermissionsSeeder extends Seeder
         $employee->givePermissionTo(Permission::where('guard_name', 'employee')->get());
 
         // ----- Citizen ------
-        Role::firstOrCreate(['name' => 'citizen', 'guard_name' => 'api']);
+        Role::firstOrCreate([
+            'name' => 'citizen',
+            'guard_name' => 'web'
+        ]);
     }
 }
