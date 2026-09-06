@@ -13,7 +13,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        if (
+            $this->app->environment('local') &&
+            class_exists(\Laravel\Telescope\TelescopeApplicationServiceProvider::class)
+        ) {
+            $this->app->register(
+                \App\Providers\TelescopeServiceProvider::class
+            );
+        }
     }
 
     /**
@@ -24,7 +31,7 @@ class AppServiceProvider extends ServiceProvider
         Complaint::observe(
             ComplaintObserver::class
         );
-        
+
         config()->set('cors.paths', ['api/*', 'sanctum/csrf-cookie']);
         config()->set('cors.allowed_origins', ['http://localhost:8000']);
         config()->set('cors.allowed_methods', ['*']);
