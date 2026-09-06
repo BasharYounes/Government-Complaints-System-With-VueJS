@@ -63,6 +63,13 @@ RUN apt-get update \
     && a2enmod rewrite \
     && rm -rf /var/lib/apt/lists/*
 
+RUN if getent group 1000 >/dev/null; then \
+        usermod -aG "$(getent group 1000 | cut -d: -f1)" www-data; \
+    else \
+        groupadd -g 1000 render-secrets \
+        && usermod -aG render-secrets www-data; \
+    fi
+
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
