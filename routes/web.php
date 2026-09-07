@@ -36,4 +36,4 @@ require __DIR__.'/Admin/ApiRoues.php';
 
 require __DIR__.'/Employee/ApiRoutes.php';
 
-Route::inertia('/', 'Test');
+// Route::inertia('/', 'Test');

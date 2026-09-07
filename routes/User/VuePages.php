@@ -17,7 +17,7 @@ Route::inertia(
 )->name('user.log-in');
 
 Route::inertia(
-    'user-register',
+    '/',
     'User/Auth/Register'
 )->name('user.register');
 
@@ -98,7 +98,7 @@ Route::middleware('AuthenticateUser')->group(function () {
         ->whereNumber('id')
         ->name('user.complaints.show');
 
-        
+
     Route::patch(
             'complaints/{id}',
             [ComplaintController::class, 'update']

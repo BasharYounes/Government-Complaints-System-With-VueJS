@@ -39,6 +39,8 @@ fi
 
 echo "Preparing Laravel..."
 
+php artisan storage:link || true
+
 php artisan migrate --force
 
 php artisan db:seed --class=RolesAndPermissionsSeeder --force
