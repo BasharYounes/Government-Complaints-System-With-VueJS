@@ -2,16 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\GenericNotificationEvent;
 use App\Http\Requests\UpdateComplaintStatusRequest;
-use App\Models\User;
-use App\Repositories\ComplaintEmployeeRepository;
 use App\Repositories\Complaints\ComplaintRepository;
 use App\Services\EmployeeComplaintService;
 use Cache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use App\Traits\ApiResponse;
 
 
 class EmployeeComplaintController extends Controller
@@ -27,8 +23,7 @@ class EmployeeComplaintController extends Controller
         $this->complaintService = $complaintService;
 
         // Apply auth + role middleware to all routes
-        $this->middleware(['auth:sanctum', 'role:employee']);
-    }
+        $this->middleware(['auth:employee', 'role:employee,employee']);    }
 
     /**
      * List all complaints for the authenticated employee's government entity.

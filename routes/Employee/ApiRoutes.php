@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/loginEmployee',[AuthController::class,'loginEmployee']);
 
-Route::middleware(['AuthenticateEmployee','role:employee'])->prefix('employee')->group(function () {
+Route::middleware(['auth:employee', 'role:employee,employee'])->prefix('employee')->group(function () {
     Route::get('/complaints', [EmployeeComplaintController::class, 'index'])->middleware('permission:view-complaint');
     Route::post('/update-complaints/{complaintId}', [EmployeeComplaintController::class, 'updateStatus'])->middleware('permission:update-complaint');
     Route::post('check-editing/{complaintId}',[ComplaintController::class,'edit']);
