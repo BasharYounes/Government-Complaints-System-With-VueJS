@@ -150,6 +150,8 @@ COPY docker/supervisord.conf \
 COPY docker/start-container.sh \
     /usr/local/bin/start-container
 
+COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
+
 RUN chmod +x /usr/local/bin/start-container
 
 
