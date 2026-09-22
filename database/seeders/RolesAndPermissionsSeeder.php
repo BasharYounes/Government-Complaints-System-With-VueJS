@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Admin;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
@@ -71,6 +72,12 @@ class RolesAndPermissionsSeeder extends Seeder
         }
 
         $admin->givePermissionTo(Permission::where('guard_name', 'admin')->get());
+
+        Admin::firstOrCreate([
+            'name' => 'Super Admin',
+            'email' => 'admin@gmail.com',
+            'password' => bcrypt('12345678'),
+        ])->assignRole('super_admin');
 
         // ----- Employee ------
         $employee = Role::firstOrCreate(['name' => 'employee', 'guard_name' => 'employee']);
