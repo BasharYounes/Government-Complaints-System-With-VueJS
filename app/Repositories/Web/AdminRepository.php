@@ -17,7 +17,7 @@ class AdminRepository
 
     public function findByEmail(string $email): ?Admin
     {
-        return Admin::where('email', $email)->firstOrFail();
+        return Admin::where('email', $email)->first();
     }
 
     public function search(string $keyword)
